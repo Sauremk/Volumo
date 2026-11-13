@@ -12,3 +12,8 @@ print('dist/index.html listo:', len(html) // 1024, 'KB')
 (R / 'docs').mkdir(exist_ok=True)
 (R / 'docs' / 'index.html').write_text(html, encoding='utf-8')
 print('docs/index.html listo (GitHub Pages)')
+for f in ('index.html',):
+    (R / f).write_text(html, encoding='utf-8')
+import shutil
+for f in ('manifest.json','icon-180.png','icon-192.png','icon-512.png'):
+    shutil.copy(R / 'docs' / f, R / f)
