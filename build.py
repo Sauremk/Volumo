@@ -9,3 +9,6 @@ for marker, f in [('HUMAN', 'human.js'), ('RAW', 'ejercicios.js'), ('MUS', 'rank
 (R / 'dist').mkdir(exist_ok=True)
 (R / 'dist' / 'index.html').write_text(html, encoding='utf-8')
 print('dist/index.html listo:', len(html) // 1024, 'KB')
+(R / 'docs').mkdir(exist_ok=True)
+(R / 'docs' / 'index.html').write_text(html, encoding='utf-8')
+print('docs/index.html listo (GitHub Pages)')
