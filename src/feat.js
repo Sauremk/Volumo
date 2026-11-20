@@ -56,11 +56,39 @@ function renderHist(){
   const trained=new Set(H.map(h=>{const d=new Date(h.start);d.setHours(0,0,0,0);return d.getTime()}));
   let w='';for(let i=0;i<7;i++){const d=new Date(ws);d.setDate(d.getDate()+i);w+=`<div class="day ${trained.has(d.getTime())?'on':''} ${d.getTime()===today.getTime()?'today':''}">${DAYS[d.getDay()][0]}<i></i></div>`}
   $('#week').innerHTML=w;
-  $('#hist').innerHTML=H.length?H.slice(0,20).map(h=>{const d=new Date(h.start);const mins=Math.max(1,Math.round((h.end-h.start)/60000));
-    return `<div class="ses"><div class="h"><b>${esc(h.name)}</b><span>${DAYS[d.getDay()]} ${dstr(h.start)} · ${mins} min</span></div>
+  $('#hist').innerHTML=H.length?H.slice(0,20).map((h,hi)=>{const d=new Date(h.start);const mins=Math.max(1,Math.round((h.end-h.start)/60000));
+    return `<div class="ses" data-hs="${hi}"><span class="edh">✎ Editar</span><div class="h"><b>${esc(h.name)}</b><span>${DAYS[d.getDay()]} ${dstr(h.start)} · ${mins} min</span></div>
     <ul>${h.items.filter(it=>byId[it.id]&&work(it.sets).length).map(it=>{const ws_=work(it.sets);const best=ws_.reduce((a,b)=>(+b.kg||0)>(+a.kg||0)?b:a,ws_[0]);const wu=it.sets.length-ws_.length;return `<li><em>${byId[it.id].n}</em> — ${ws_.length}×${wu?` (+${wu} C)`:''} · mejor ${best.kg||0} lb × ${best.reps||0}</li>`}).join('')}</ul>
     <div style="margin-top:8px;font-size:13px;font-weight:700">${Math.round(vol(h)).toLocaleString('es')} lb de volumen</div></div>`}).join('')
     :`<div class="empty"><b>Aún no hay entrenos</b>Termina tu primer entreno y aparecerá aquí</div>`;
+  $('#hist').querySelectorAll('[data-hs]').forEach(b=>b.onclick=()=>openSesEdit(+b.dataset.hs));
+}
+/* ---- Editar un entreno guardado ---- */
+function openSesEdit(idx){
+  const p=P(),h=p.history[idx];if(!h)return;
+  const C=JSON.parse(JSON.stringify(h));
+  const draw=()=>{
+    $('#sheet').innerHTML=`<div class="grab"></div><h3>Editar entreno</h3><p class="muted" style="margin:4px 0 12px">${esc(C.name)} · ${dstr(C.start)}</p>
+      ${C.items.map((it,ii)=>byId[it.id]?`<div class="exed"><b>${byId[it.id].n}${isDB(it.id)?' <small style="color:var(--acc);font-weight:600">· lb de una mancuerna</small>':''}</b>
+        <div class="eset" style="margin-bottom:4px"><span></span><span style="font-size:11px">LB</span><span style="font-size:11px">REPS</span><span></span></div>
+        ${it.sets.map((s,si)=>`<div class="eset"><span style="${s.w?'color:var(--mid)':''}">${s.w?'C':si+1-it.sets.slice(0,si).filter(x=>x.w).length}</span>
+          <input inputmode="decimal" data-e="${ii}-${si}-kg" value="${esc(s.kg)}"><input inputmode="numeric" data-e="${ii}-${si}-reps" value="${esc(s.reps)}">
+          <button data-ed="${ii}-${si}" aria-label="Borrar serie">×</button></div>`).join('')}
+        <button class="addset" data-ea="${ii}">+ Serie</button></div>`:'').join('')}
+      <button class="btn pri" id="eSave">Guardar cambios</button>
+      <button class="btn danger" id="eDel">Borrar este entreno</button>
+      <div class="confirm" id="eBox"><button style="background:var(--card);border:1px solid var(--line)" id="eNo">Cancelar</button><button style="background:var(--red);color:#fff" id="eYes">Sí, borrar</button></div>`;
+    $('#sheet').querySelectorAll('[data-e]').forEach(inp=>inp.oninput=()=>{const [i,s,k]=inp.dataset.e.split('-');const v=clean(inp.value);if(v!==inp.value)inp.value=v;C.items[i].sets[s][k]=v});
+    $('#sheet').querySelectorAll('[data-ed]').forEach(b=>b.onclick=()=>{const [i,s]=b.dataset.ed.split('-').map(Number);C.items[i].sets.splice(s,1);draw()});
+    $('#sheet').querySelectorAll('[data-ea]').forEach(b=>b.onclick=()=>{const it=C.items[b.dataset.ea],l=it.sets[it.sets.length-1]||{};it.sets.push({kg:l.kg||'',reps:l.reps||''});draw()});
+    $('#eSave').onclick=()=>{C.items=C.items.map(it=>Object.assign(it,{sets:it.sets.filter(s=>num(s.reps)>0)})).filter(it=>it.sets.length);
+      if(!C.items.length){$('#eBox').classList.add('on');return}
+      p.history[idx]=C;save();closeSheet();renderHist();toast('Entreno actualizado ✓')};
+    $('#eDel').onclick=()=>$('#eBox').classList.add('on');
+    $('#eNo').onclick=()=>$('#eBox').classList.remove('on');
+    $('#eYes').onclick=()=>{p.history.splice(idx,1);save();closeSheet();renderHist();toast('Entreno borrado')};
+  };
+  draw();showSheet();
 }
 
 /* ================= Mapa de calor ================= */

@@ -104,39 +104,66 @@ function renderWk(){
     return;
   }
   const PR=prMap();let ssN=0;
+  const allDone=it=>{const w=work(it.sets);return w.length>0&&w.every(s=>s.done)};
+  const curI=W.items.findIndex(it=>byId[it.id]&&!allDone(it));
+  const stepOf=(id,v)=>{if(!/Mancuernas|Barra|Máquina|Polea|Smith|Disco|Kettlebell/.test(byId[id].eq))return 5;return num(v)<20?2.5:5};
+  const short=s=>`${s.kg===''||s.kg==null?0:s.kg}×${s.reps||0}`;
   el.innerHTML=`<div class="wkbar">
       <div class="r1"><div class="nm"><small>${esc(W.name)}</small><b id="clock">${fmt((Date.now()-W.start)/1000)}</b></div>
         <button class="more" id="wkMore" aria-label="Opciones">⋯</button><button class="fin" id="finish">Terminar</button></div>
       <div class="prog"><i id="progI"></i></div>
       <div class="r2"><span id="hSum">0/0 series · 0 lb</span><button class="restchip" id="restCfg">⏱ ${fmt(p.rest)} <em>${p.auto?'auto':'manual'}</em></button></div>
     </div>
-    ${W.items.length?'<p class="muted" style="font-size:12px;margin:-4px 0 10px">Toca el número de una serie para marcarla como <b style="color:var(--mid)">C</b> (calentamiento): no cuenta para récords ni progreso.</p>':`<div class="empty"><b>Entreno vacío</b>Añade tu primer ejercicio</div><div style="height:12px"></div>`}
-    ${W.items.map((it,ii)=>{const e=byId[it.id];if(!e)return '';const inSS=it.ss||(ii>0&&W.items[ii-1].ss);if(inSS&&!(ii>0&&W.items[ii-1].ss))ssN++;const sg=suggest(it.id),pr=PR[it.id];
-      return `<div class="wk ${inSS?'ssc':''}">
+    ${W.items.length?'<p class="muted" style="font-size:12px;margin:-4px 0 10px">Ajusta el peso y las reps con <b>−</b> / <b>+</b> (o escríbelos) y toca <b>✓</b> al terminar cada serie. Toca el número para marcarla como calentamiento <b style="color:var(--mid)">C</b>.</p>':`<div class="empty"><b>Entreno vacío</b>Añade tu primer ejercicio</div><div style="height:12px"></div>`}
+    ${W.items.map((it,ii)=>{const e=byId[it.id];if(!e)return '';const inSS=it.ss||(ii>0&&W.items[ii-1].ss);if(inSS&&!(ii>0&&W.items[ii-1].ss))ssN++;
+      const pr=PR[it.id],db=isDB(it.id),one=SINGLE_DB.includes(it.id);
+      if(allDone(it)&&!it.open)return `<div class="wk fold ${inSS?'ssc':''}" data-open="${ii}"><div class="foldrow"><span class="okc">✓</span><div><b>${e.n}</b><small>${work(it.sets).map(short).join(' · ')}${db?' (lb c/u)':''}</small></div><em>Editar</em></div></div>`;
+      const sg=suggest(it.id),pv=work((it.prev||[]).filter(Boolean));
+      return `<div class="wk ${inSS?'ssc':''} ${ii===curI?'cur':''}">
+      ${ii===curI?'<span class="curtag">AHORA</span>':''}
       ${inSS?`<div class="sstag">Superserie ${String.fromCharCode(64+ssN)} ${it.ss?'· sin descanso, pasa al siguiente':'· ahora descansa'}</div>`:''}
       <div class="wk-h"><div class="t" data-info="${it.id}"><b>${e.n}</b><small>${(EX2MUS[it.id]||[]).slice(0,2).map(m=>MUS[m].n).join(' · ')||e.g}${pr?` · 🏆 ${pr.kg} lb`:''}</small></div><button data-im="${ii}" aria-label="Opciones del ejercicio">⋯</button></div>
-      ${sg?`<div class="sug"><span>💡</span><div><b>Hoy intenta ${sg.kg?sg.kg+' lb × ':''}${sg.reps} reps</b><small>${sg.why}</small></div><button data-sug="${ii}">Usar</button></div>`:''}
-      <div class="heads"><span>#</span><span>Anterior</span><span>lb</span><span>reps</span><span>✓</span></div>
-      ${it.sets.map((s,si)=>{const pv=it.prev&&it.prev[si];return `<div class="set ${s.done?'done':''} ${s.w?'wu':''}">
-        <button class="n" data-wu="${ii}-${si}" aria-label="Cambiar tipo de serie">${s.w?'C':si+1-it.sets.slice(0,si).filter(x=>x.w).length}</button><span class="pv">${pv?`${pv.kg||0}×${pv.reps||0}`:'—'}</span>
-        <input inputmode="decimal" data-i="${ii}" data-s="${si}" data-f="kg" value="${esc(s.kg)}" placeholder="${pv?esc(pv.kg):'lb'}" aria-label="lb">
-        <input inputmode="numeric" data-i="${ii}" data-s="${si}" data-f="reps" value="${esc(s.reps)}" placeholder="${pv?esc(pv.reps):'reps'}" aria-label="reps">
-        <button class="chk ${s.done?'ok':''}" data-ck="${ii}-${si}" aria-label="Serie hecha"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 5 5 9-10"/></svg></button></div>`}).join('')}
-      <div class="setbtns"><button class="addset" data-as="${ii}">+ Serie</button><button class="addset" data-aw="${ii}">+ Calentamiento</button></div></div>`}).join('')}
+      <div class="exinfo">
+        ${db?`<span class="dbchip">🏋️ ${one?'Anota el peso de la mancuerna':'Anota el peso de UNA mancuerna'}</span>`:''}
+        ${pv.length?`<span class="lastl">Última vez: <b>${pv.map(short).join(' · ')}</b></span>`:'<span class="lastl">Primera vez con este ejercicio: anota con qué peso empiezas.</span>'}
+      </div>
+      ${sg?`<div class="sug"><span>💡</span><div><b>Hoy intenta ${sg.kg?sg.kg+' lb'+(db?' c/u':'')+' × ':''}${sg.reps} reps</b><small>${sg.why}</small></div><button data-sug="${ii}">Usar</button></div>`:''}
+      <div class="heads"><span>Serie</span><span class="${db?'dbh':''}">${db&&!one?'lb c/u':'lb'}</span><span>Reps</span><span>✓</span></div>
+      ${it.sets.map((s,si)=>`<div class="set ${s.done?'done':''} ${s.w?'wu':''}">
+        <button class="n" data-wu="${ii}-${si}" aria-label="Cambiar tipo de serie">${s.w?'C':si+1-it.sets.slice(0,si).filter(x=>x.w).length}</button>
+        <div class="stp"><button data-st="${ii}-${si}-kg-m" aria-label="Menos peso">−</button><input inputmode="decimal" data-i="${ii}" data-s="${si}" data-f="kg" value="${esc(s.kg)}" placeholder="lb" aria-label="Peso en lb"><button data-st="${ii}-${si}-kg-p" aria-label="Más peso">+</button></div>
+        <div class="stp"><button data-st="${ii}-${si}-reps-m" aria-label="Menos reps">−</button><input inputmode="numeric" data-i="${ii}" data-s="${si}" data-f="reps" value="${esc(s.reps)}" placeholder="reps" aria-label="Repeticiones"><button data-st="${ii}-${si}-reps-p" aria-label="Más reps">+</button></div>
+        <button class="chk ${s.done?'ok':''}" data-ck="${ii}-${si}" aria-label="Serie hecha"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 5 5 9-10"/></svg></button></div>`).join('')}
+      <div class="setbtns"><button class="addset" data-as="${ii}">+ Serie</button><button class="addset" data-aw="${ii}">+ Calentamiento</button>${it.sets.length>1?`<button class="addset" data-rs="${ii}" style="flex:none;width:auto;padding:10px 14px" aria-label="Quitar una serie">− Serie</button>`:''}</div>
+      ${it.open?`<button class="linkbtn" data-close="${ii}" style="margin-top:8px">Listo, cerrar</button>`:''}</div>`}).join('')}
     <button class="btn ghost" id="moreEx">+ Añadir ejercicio</button>`;
   summary();
   tick=setInterval(()=>{const c=$('#clock');if(c)c.textContent=fmt((Date.now()-W.start)/1000)},1000);
-  el.querySelectorAll('input[data-i]').forEach(inp=>inp.oninput=()=>{W.items[inp.dataset.i].sets[inp.dataset.s][inp.dataset.f]=inp.value;save();summary()});
+  el.querySelectorAll('input[data-i]').forEach(inp=>{
+    inp.onfocus=()=>{try{inp.select()}catch(e){}};
+    inp.oninput=()=>{const v=clean(inp.value);if(v!==inp.value)inp.value=v;W.items[inp.dataset.i].sets[inp.dataset.s][inp.dataset.f]=v;save();summary()};
+  });
+  el.querySelectorAll('[data-st]').forEach(b=>b.onclick=()=>{
+    const [i,s,f,d]=b.dataset.st.split('-');
+    const it=W.items[+i],set=it.sets[+s],dir=d==='p'?1:-1,cur=num(set[f]);
+    const step=f==='reps'?1:stepOf(it.id,dir<0?cur-0.01:cur);
+    let v=Math.max(0,+(cur+dir*step).toFixed(2));set[f]=String(v);
+    const inp=el.querySelector(`input[data-i="${i}"][data-s="${s}"][data-f="${f}"]`);if(inp)inp.value=set[f];save();summary()});
   el.querySelectorAll('[data-ck]').forEach(b=>b.onclick=()=>{
-    const [i,s]=b.dataset.ck.split('-').map(Number),it=W.items[i],set=it.sets[s],pv=(it.prev&&it.prev[s])||it.sets[s-1]||{};
+    const [i,s]=b.dataset.ck.split('-').map(Number),it=W.items[i],set=it.sets[s],pv=it.sets[s-1]||{};
     set.done=!set.done;
     if(set.done){if(set.kg==='')set.kg=pv.kg||'';if(set.reps==='')set.reps=pv.reps||'';
-      const old=PR[it.id];if(!set.w&&+set.kg>0&&old&&+set.kg>old.kg)toast('🏆 ¡Nuevo récord de peso!')}
+      if(!set.reps){set.done=false;toast('Escribe cuántas reps hiciste');return}
+      const old=PR[it.id];if(!set.w&&num(set.kg)>0&&old&&num(set.kg)>old.kg)toast('🏆 ¡Nuevo récord de peso!')}
+    if(allDone(it))it.open=false;
     save();renderWk();
     if(set.done){if(it.ss&&W.items[i+1]){toast('Superserie: pasa a '+byId[W.items[i+1].id].n)}else if(p.auto)startRest(set.w?Math.min(60,p.rest):p.rest)}
   });
+  el.querySelectorAll('[data-open]').forEach(b=>b.onclick=()=>{W.items[b.dataset.open].open=true;save();renderWk()});
+  el.querySelectorAll('[data-close]').forEach(b=>b.onclick=()=>{W.items[b.dataset.close].open=false;save();renderWk()});
   el.querySelectorAll('[data-wu]').forEach(b=>b.onclick=()=>{const [i,s]=b.dataset.wu.split('-').map(Number);const st=W.items[i].sets[s];st.w=!st.w;save();renderWk()});
   el.querySelectorAll('[data-as]').forEach(b=>b.onclick=()=>{const it=W.items[b.dataset.as];const l=work(it.sets).slice(-1)[0]||{};it.sets.push({kg:l.kg||'',reps:l.reps||'',done:false});save();renderWk()});
+  el.querySelectorAll('[data-rs]').forEach(b=>b.onclick=()=>{const it=W.items[b.dataset.rs];let k=it.sets.length-1;while(k>0&&it.sets[k].done)k--;it.sets.splice(k,1);save();renderWk()});
   el.querySelectorAll('[data-aw]').forEach(b=>b.onclick=()=>{const it=W.items[b.dataset.aw];const n=it.sets.filter(s=>s.w).length;it.sets.splice(n,0,{kg:'',reps:'',done:false,w:true});if(it.prev)it.prev.splice(n,0,null);save();renderWk()});
   el.querySelectorAll('[data-sug]').forEach(b=>b.onclick=()=>{const it=W.items[b.dataset.sug],sg=suggest(it.id);it.sets.forEach(s=>{if(!s.done&&!s.w){if(sg.kg)s.kg=String(sg.kg);s.reps=String(sg.reps)}});save();renderWk();toast('Sugerencia aplicada')});
   el.querySelectorAll('[data-im]').forEach(b=>b.onclick=()=>openItemMenu(+b.dataset.im));
@@ -144,7 +171,7 @@ function renderWk(){
   $('#restCfg').onclick=openRestCfg;
   $('#moreEx').onclick=openPicker;
   $('#wkMore').onclick=openWkMenu;
-  $('#finish').onclick=finish;
+  $('#finish').onclick=()=>finish();
 }
 function openItemMenu(i){
   const W=P().workout,it=W.items[i],e=byId[it.id],nx=W.items[i+1];
@@ -164,7 +191,7 @@ function openItemMenu(i){
 }
 function summary(){
   const W=P().workout;if(!W)return;let tot=0,dn=0,vol=0;
-  W.items.forEach(it=>it.sets.forEach(s=>{if(s.w)return;tot++;if(s.done){dn++;vol+=(+s.kg||0)*(+s.reps||0)}}));
+  W.items.forEach(it=>it.sets.forEach(s=>{if(s.w)return;tot++;if(s.done){dn++;vol+=num(s.kg)*num(s.reps)*dbf(it.id)}}));
   const a=$('#hSum'),b=$('#progI');if(a)a.textContent=`${dn}/${tot} series · ${Math.round(vol).toLocaleString('es')} lb`;if(b)b.style.width=(tot?dn/tot*100:0)+'%';
 }
 function openPicker(){
@@ -212,14 +239,28 @@ function openWkMenu(){
   $('#cYes').onclick=()=>{P().workout=null;save();badge();stopRest();closeSheet();renderWk();toast('Entreno descartado')};
   showSheet();
 }
-function finish(){
+function finish(mode){
   const p=P(),W=p.workout;
+  const pend=W.items.reduce((a,it)=>a+it.sets.filter(s=>!s.done&&num(s.reps)>0).length,0);
+  const doneN=W.items.reduce((a,it)=>a+it.sets.filter(s=>s.done&&!s.w).length,0);
+  if(!mode&&pend){
+    $('#sheet').innerHTML=`<div class="grab"></div><h3>Tienes ${pend} serie${pend>1?'s':''} sin marcar ✓</h3>
+      <p class="muted" style="margin:6px 0 14px">Solo se guardan las series que marcaste. ¿Hiciste también las que no marcaste?</p>
+      <button class="btn pri" id="fAll">Sí, guardarlas todas</button>
+      ${doneN?`<button class="btn sec2" id="fDone">No, guardar solo las ${doneN} marcadas</button>`:''}
+      <button class="btn sec2" id="fBack">Seguir entrenando</button>`;
+    $('#fAll').onclick=()=>{W.items.forEach(it=>it.sets.forEach(s=>{if(num(s.reps)>0)s.done=true}));closeSheet();finish('ok')};
+    if($('#fDone'))$('#fDone').onclick=()=>{closeSheet();finish('ok')};
+    $('#fBack').onclick=closeSheet;
+    showSheet();return;
+  }
   if(!W.items.some(it=>it.sets.some(s=>s.done&&!s.w))){toast('Marca al menos una serie ✓');return}
+  W.items.forEach(it=>{delete it.open;it.sets.forEach(s=>{s.kg=clean(s.kg);s.reps=clean(s.reps)})});
   const before=prMap(),achBefore=achievements().filter(a=>a.ok).map(a=>a.id);
   W.end=Date.now();
   W.items=W.items.map(it=>({id:it.id,ss:it.ss||undefined,sets:it.sets.filter(s=>s.done).map(s=>s.w?{kg:s.kg,reps:s.reps,w:true}:{kg:s.kg,reps:s.reps})})).filter(it=>it.sets.length);
   p.history.unshift(W);p.workout=null;save();badge();stopRest();updateBell();
-  const prs=[];W.items.forEach(it=>{const top=work(it.sets).reduce((a,b)=>(+b.kg||0)>(+a.kg||0)?b:a,{kg:0,reps:0});const o=before[it.id];if(o&&+top.kg>o.kg)prs.push({id:it.id,kg:+top.kg,reps:+top.reps,old:o.kg})});
+  const prs=[];W.items.forEach(it=>{const top=work(it.sets).reduce((a,b)=>num(b.kg)>num(a.kg)?b:a,{kg:0,reps:0});const o=before[it.id];if(o&&num(top.kg)>o.kg)prs.push({id:it.id,kg:+top.kg,reps:+top.reps,old:o.kg})});
   const newAch=achievements().filter(a=>a.ok&&!achBefore.includes(a.id));
   chartEx=W.items[0].id;
   const v=vol(W),mins=Math.max(1,Math.round((W.end-W.start)/60000));
