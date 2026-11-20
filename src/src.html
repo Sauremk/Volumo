@@ -166,6 +166,16 @@ header.top small{color:var(--mut);font-size:14px}
 .ring svg{width:62px;height:62px;transform:rotate(-90deg)}
 .ring b{position:absolute;inset:0;display:grid;place-items:center;font-family:'Barlow Condensed';font-size:20px;font-weight:800}
 .rest .l{flex:1;min-width:0}
+.rest.fin{background:var(--acc);animation:restPulse .9s ease-in-out infinite alternate}
+.rest.fin .l b,.rest.fin .l span,.rest.fin .ring b{color:var(--acc-ink)}
+.rest.fin .ring circle{stroke:rgba(0,0,0,.25)}
+.rest.fin .bt button{background:rgba(0,0,0,.15);color:var(--acc-ink)}.rest.fin .bt .sk{background:#111;color:var(--acc)}
+@keyframes restPulse{from{box-shadow:0 0 0 0 rgba(198,244,50,.6)}to{box-shadow:0 0 0 14px rgba(198,244,50,0)}}
+.tgl{display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid var(--line);cursor:pointer}
+.tgl div{flex:1}.tgl b{display:block;font-size:15px}.tgl small{color:var(--mut);font-size:12.5px}
+.tgl i{width:46px;height:28px;border-radius:99px;background:var(--card2);border:1px solid var(--line);position:relative;flex:none;transition:.2s}
+.tgl i:after{content:'';position:absolute;top:3px;left:3px;width:20px;height:20px;border-radius:50%;background:var(--mut);transition:.2s}
+.tgl.on i{background:var(--acc);border-color:var(--acc)}.tgl.on i:after{left:21px;background:#111}
 .rest .l b{display:block;font-size:15px}
 .rest .l span{font-size:12px;color:var(--mut)}
 .rest .bt{display:flex;gap:6px}
@@ -495,9 +505,7 @@ const dstr=t=>{const d=new Date(t);return d.getDate()+' '+MONTHS[d.getMonth()]};
 function greet(){const h=new Date().getHours();const p=P();$('#greet').textContent=(h<12?'Buenos días':h<19?'Buenas tardes':'Buenas noches')+(p?', '+p.name.split(' ')[0]:'')+' 💪';$('#avBtn').textContent=p&&p.name.trim()?p.name.trim()[0].toUpperCase():'?'}
 function weekStart(){const t=new Date();t.setHours(0,0,0,0);t.setDate(t.getDate()-((t.getDay()+6)%7));return t.getTime()}
 
-let actx=null;
-document.addEventListener('pointerdown',()=>{if(!actx){try{actx=new (window.AudioContext||window.webkitAudioContext)()}catch(e){}}},{once:true});
-function beep(){try{if(!actx)return;[0,.25,.5].forEach((t,i)=>{const o=actx.createOscillator(),g=actx.createGain();o.frequency.value=i===2?1320:880;o.connect(g);g.connect(actx.destination);const st=actx.currentTime+t;g.gain.setValueAtTime(.0001,st);g.gain.exponentialRampToValueAtTime(.25,st+.02);g.gain.exponentialRampToValueAtTime(.0001,st+.18);o.start(st);o.stop(st+.2)})}catch(e){}}
+/*ALARM*/
 
 /* ================= Semana: músculos entrenados ================= */
 function weekCounts(){
@@ -674,19 +682,25 @@ function badge(){const w=P().workout,n=w?w.items.length:0;const b=$('#badge');b.
 /*WK*/
 
 /* ================= Temporizador ================= */
-let restEnd=0,restTot=0,restInt;
-function startRest(sec){restTot=sec;restEnd=Date.now()+sec*1000;$('#rest').classList.add('on');document.body.classList.add('resting');clearInterval(restInt);restInt=setInterval(upRest,200);upRest()}
+let restEnd=0,restTot=0,restInt,restDoneT;
+function startRest(sec){clearTimeout(restDoneT);$('#rest').classList.remove('fin');$('#restSkip').textContent='Saltar';restTot=sec;restEnd=Date.now()+sec*1000;$('#rest').classList.add('on');document.body.classList.add('resting');clearInterval(restInt);restInt=setInterval(upRest,200);schedAlarm(sec);upRest()}
 function upRest(){
   const left=(restEnd-Date.now())/1000;
-  $('#restT').textContent=fmt(Math.ceil(left));
+  $('#restT').textContent=fmt(Math.max(0,Math.ceil(left)));
   $('#ringArc').setAttribute('stroke-dashoffset',(169.6*(1-Math.max(0,Math.min(1,left/restTot)))).toFixed(1));
   $('#restSub').textContent=left>10?'Siguiente serie':'¡Prepárate!';
-  if(left<=0){stopRest();beep();toast('¡A por la siguiente serie!');try{navigator.vibrate&&navigator.vibrate([200,100,200])}catch(e){}}
+  if(left<=0)restDone();
 }
-function stopRest(){clearInterval(restInt);$('#rest').classList.remove('on');document.body.classList.remove('resting')}
+function restDone(){
+  clearInterval(restInt);const r=$('#rest');r.classList.add('fin');$('#restT').textContent='0:00';
+  r.querySelector('.l b').textContent='¡Descanso terminado!';$('#restSub').textContent='¡A la siguiente serie! 💪';$('#restSkip').textContent='Listo';
+  if(AL().vib)try{navigator.vibrate&&navigator.vibrate([400,150,400,150,400])}catch(e){}
+  clearTimeout(restDoneT);restDoneT=setTimeout(stopRest,12000);
+}
+function stopRest(){clearInterval(restInt);clearTimeout(restDoneT);cancelAlarm();restEnd=0;const r=$('#rest');r.classList.remove('on','fin');r.querySelector('.l b').textContent='Descansando';$('#restSkip').textContent='Saltar';document.body.classList.remove('resting')}
 $('#restSkip').onclick=stopRest;
-$('#restPlus').onclick=()=>{restEnd+=15000;restTot+=15;upRest()};
-$('#restMinus').onclick=()=>{restEnd-=15000;upRest()};
+$('#restPlus').onclick=()=>{if(!restEnd)return;if($('#rest').classList.contains('fin')){startRest(15);return}restEnd+=15000;restTot+=15;schedAlarm((restEnd-Date.now())/1000);upRest()};
+$('#restMinus').onclick=()=>{if(!restEnd||$('#rest').classList.contains('fin'))return;restEnd-=15000;const l=(restEnd-Date.now())/1000;if(l>0)schedAlarm(l);upRest()};
 
 /* ================= Gráficas ================= */
 let chartEx=null;

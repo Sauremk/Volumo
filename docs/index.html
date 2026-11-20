@@ -166,6 +166,16 @@ header.top small{color:var(--mut);font-size:14px}
 .ring svg{width:62px;height:62px;transform:rotate(-90deg)}
 .ring b{position:absolute;inset:0;display:grid;place-items:center;font-family:'Barlow Condensed';font-size:20px;font-weight:800}
 .rest .l{flex:1;min-width:0}
+.rest.fin{background:var(--acc);animation:restPulse .9s ease-in-out infinite alternate}
+.rest.fin .l b,.rest.fin .l span,.rest.fin .ring b{color:var(--acc-ink)}
+.rest.fin .ring circle{stroke:rgba(0,0,0,.25)}
+.rest.fin .bt button{background:rgba(0,0,0,.15);color:var(--acc-ink)}.rest.fin .bt .sk{background:#111;color:var(--acc)}
+@keyframes restPulse{from{box-shadow:0 0 0 0 rgba(198,244,50,.6)}to{box-shadow:0 0 0 14px rgba(198,244,50,0)}}
+.tgl{display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid var(--line);cursor:pointer}
+.tgl div{flex:1}.tgl b{display:block;font-size:15px}.tgl small{color:var(--mut);font-size:12.5px}
+.tgl i{width:46px;height:28px;border-radius:99px;background:var(--card2);border:1px solid var(--line);position:relative;flex:none;transition:.2s}
+.tgl i:after{content:'';position:absolute;top:3px;left:3px;width:20px;height:20px;border-radius:50%;background:var(--mut);transition:.2s}
+.tgl.on i{background:var(--acc);border-color:var(--acc)}.tgl.on i:after{left:21px;background:#111}
 .rest .l b{display:block;font-size:15px}
 .rest .l span{font-size:12px;color:var(--mut)}
 .rest .bt{display:flex;gap:6px}
@@ -623,9 +633,58 @@ const dstr=t=>{const d=new Date(t);return d.getDate()+' '+MONTHS[d.getMonth()]};
 function greet(){const h=new Date().getHours();const p=P();$('#greet').textContent=(h<12?'Buenos días':h<19?'Buenas tardes':'Buenas noches')+(p?', '+p.name.split(' ')[0]:'')+' 💪';$('#avBtn').textContent=p&&p.name.trim()?p.name.trim()[0].toUpperCase():'?'}
 function weekStart(){const t=new Date();t.setHours(0,0,0,0);t.setDate(t.getDate()-((t.getDay()+6)%7));return t.getTime()}
 
+/* ================= Alarma del descanso ================= */
+const ALARM_DEF={sound:'campana',vol:.7,warn:true,rep:3,vib:true,wake:true,bg:false};
+function AL(){const p=P();return p.alarm=Object.assign({},ALARM_DEF,p.alarm||{})}
 let actx=null;
-document.addEventListener('pointerdown',()=>{if(!actx){try{actx=new (window.AudioContext||window.webkitAudioContext)()}catch(e){}}},{once:true});
-function beep(){try{if(!actx)return;[0,.25,.5].forEach((t,i)=>{const o=actx.createOscillator(),g=actx.createGain();o.frequency.value=i===2?1320:880;o.connect(g);g.connect(actx.destination);const st=actx.currentTime+t;g.gain.setValueAtTime(.0001,st);g.gain.exponentialRampToValueAtTime(.25,st+.02);g.gain.exponentialRampToValueAtTime(.0001,st+.18);o.start(st);o.stop(st+.2)})}catch(e){}}
+document.addEventListener('pointerdown',()=>{try{if(!actx)actx=new (window.AudioContext||window.webkitAudioContext)();if(actx.state==='suspended')actx.resume()}catch(e){}});
+function tone(type,sr,v){
+  const L=type==='campana'?1.6:type==='pitido'?1.0:1.8,a=new Float32Array(Math.round(L*sr));
+  for(let i=0;i<a.length;i++){const t=i/sr;let x=0;
+    if(type==='campana'){[0,.5].forEach(s=>{const u=t-s;if(u>=0){const e=Math.exp(-u*4);x+=e*(Math.sin(2*Math.PI*1046*u)+.45*Math.sin(2*Math.PI*2093*u)+.2*Math.sin(2*Math.PI*3140*u))*.6}})}
+    else if(type==='pitido'){const k=Math.floor(t/.2),u=t-k*.2;if(k<4&&u<.12){const e=Math.min(1,u/.005,(.12-u)/.005);x=e*(Math.sin(2*Math.PI*1000*u)+.3*Math.sin(2*Math.PI*3000*u))*.8}}
+    else{const k=Math.floor(t/.15),f=k%2?1320:880,e=Math.min(1,t/.01,(L-t)/.02);x=e*(Math.sin(2*Math.PI*f*t)+.25*Math.sin(2*Math.PI*f*3*t))*.7}
+    a[i]=Math.max(-1,Math.min(1,x*v))}
+  return a;
+}
+function blip(f,len,sr,v){const a=new Float32Array(Math.round(len*sr));for(let i=0;i<a.length;i++){const t=i/sr,e=Math.min(1,t/.004,(len-t)/.01);a[i]=e*Math.sin(2*Math.PI*f*t)*v}return a}
+function planAlarm(sec,al,sr){
+  const ev=[],v=al.vol;
+  if(al.warn){if(sec>12)ev.push({t:sec-10,a:blip(990,.14,sr,.55*v)});[3,2,1].forEach(k=>{if(sec>k+.4)ev.push({t:sec-k,a:blip(700,.09,sr,.45*v)})})}
+  if(al.sound!=='off'){const b=tone(al.sound,sr,v),L=b.length/sr;for(let r=0;r<al.rep;r++)ev.push({t:sec+r*(L+.45),a:b})}
+  return ev;
+}
+let alNodes=[],alAudio=null,alURL=null;
+function cancelAlarm(){alNodes.forEach(n=>{try{n.stop()}catch(e){}});alNodes=[];if(alAudio){try{alAudio.pause()}catch(e){}alAudio=null}if(alURL){URL.revokeObjectURL(alURL);alURL=null}}
+function wavURL(ev,sr){
+  const end=ev.reduce((m,e)=>Math.max(m,e.t+e.a.length/sr),0)+.2,n=Math.ceil(end*sr),mix=new Float32Array(n);
+  ev.forEach(e=>{const o=Math.max(0,Math.round(e.t*sr));for(let i=0;i<e.a.length&&o+i<n;i++)mix[o+i]+=e.a[i]});
+  const buf=new ArrayBuffer(44+n*2),d=new DataView(buf),w=(o,s)=>{for(let i=0;i<s.length;i++)d.setUint8(o+i,s.charCodeAt(i))};
+  w(0,'RIFF');d.setUint32(4,36+n*2,true);w(8,'WAVE');w(12,'fmt ');d.setUint32(16,16,true);d.setUint16(20,1,true);d.setUint16(22,1,true);
+  d.setUint32(24,sr,true);d.setUint32(28,sr*2,true);d.setUint16(32,2,true);d.setUint16(34,16,true);w(36,'data');d.setUint32(40,n*2,true);
+  for(let i=0;i<n;i++)d.setInt16(44+i*2,Math.max(-1,Math.min(1,mix[i]))*32767,true);
+  return URL.createObjectURL(new Blob([buf],{type:'audio/wav'}));
+}
+function schedAlarm(sec){
+  cancelAlarm();const al=AL();if(al.sound==='off'&&!al.warn)return;
+  if(al.bg){ // pista de audio: sigue sonando con la pantalla bloqueada
+    const sr=8000;alURL=wavURL(planAlarm(sec,al,sr),sr);alAudio=new Audio(alURL);alAudio.setAttribute('playsinline','');
+    alAudio.play().catch(()=>{alAudio=null;schedFg(sec,al)});return;
+  }
+  schedFg(sec,al);
+}
+function schedFg(sec,al){
+  try{if(!actx)actx=new (window.AudioContext||window.webkitAudioContext)();if(actx.state==='suspended')actx.resume()}catch(e){return}
+  const sr=actx.sampleRate,now=actx.currentTime;
+  planAlarm(sec,al,sr).forEach(e=>{try{const b=actx.createBuffer(1,e.a.length,sr);b.getChannelData(0).set(e.a);const s=actx.createBufferSource();s.buffer=b;s.connect(actx.destination);s.start(now+Math.max(0,e.t));alNodes.push(s)}catch(err){}});
+}
+function testAlarm(){const al=AL();if(al.sound==='off'){toast('El sonido está en silencio');return}schedFg(0.05,Object.assign({},al,{warn:false,rep:1}))}
+// Mantener la pantalla encendida mientras entrenas
+let wl=null;
+async function wake(on){try{if(on&&AL().wake&&'wakeLock' in navigator){if(!wl){wl=await navigator.wakeLock.request('screen');wl.addEventListener('release',()=>{wl=null})}}else if(!on&&wl){const x=wl;wl=null;await x.release()}}catch(e){}}
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'){try{if(P()&&P().workout)wake(true)}catch(e){}if(restEnd&&restEnd<Date.now()&&$('#rest').classList.contains('on'))upRest()}});
+function beep(){const al=AL();if(al.sound==='off')return;schedFg(0,Object.assign({},al,{warn:false,rep:1}))}
+
 
 /* ================= Semana: músculos entrenados ================= */
 function weekCounts(){
@@ -1011,7 +1070,7 @@ function openPlanBuilder(){
 let tick;
 function renderWk(){
   clearInterval(tick);
-  const p=P(),W=p.workout,el=$('#wkBody');
+  const p=P(),W=p.workout,el=$('#wkBody');wake(!!W);
   if(!W){
     const nx=nextPlanDay(),mine=p.routines.filter(r=>!r.plan),plan=planRoutines();
     el.innerHTML=`
@@ -1048,7 +1107,7 @@ function renderWk(){
       <div class="r1"><div class="nm"><small>${esc(W.name)}</small><b id="clock">${fmt((Date.now()-W.start)/1000)}</b></div>
         <button class="more" id="wkMore" aria-label="Opciones">⋯</button><button class="fin" id="finish">Terminar</button></div>
       <div class="prog"><i id="progI"></i></div>
-      <div class="r2"><span id="hSum">0/0 series · 0 lb</span><button class="restchip" id="restCfg">⏱ ${fmt(p.rest)} <em>${p.auto?'auto':'manual'}</em></button></div>
+      <div class="r2"><span id="hSum">0/0 series · 0 lb</span><button class="restchip" id="restCfg">⏱ ${fmt(p.rest)}${AL().sound!=='off'?' 🔔':''} <em>${p.auto?'auto':'manual'}</em></button></div>
     </div>
     ${W.items.length?'<p class="muted" style="font-size:12px;margin:-4px 0 10px">Ajusta el peso y las reps con <b>−</b> / <b>+</b> (o escríbelos) y toca <b>✓</b> al terminar cada serie. Toca el número para marcarla como calentamiento <b style="color:var(--mid)">C</b>.</p>':`<div class="empty"><b>Entreno vacío</b>Añade tu primer ejercicio</div><div style="height:12px"></div>`}
     ${W.items.map((it,ii)=>{const e=byId[it.id];if(!e)return '';const inSS=it.ss||(ii>0&&W.items[ii-1].ss);if(inSS&&!(ii>0&&W.items[ii-1].ss))ssN++;
@@ -1143,13 +1202,26 @@ function openPicker(){
   showSheet();
 }
 function openRestCfg(){
-  const p=P();
-  $('#sheet').innerHTML=`<div class="grab"></div><h3>Descanso</h3><div class="sub">Tiempo entre series. Si está en automático, arranca solo al marcar una serie ✓ (las de calentamiento descansan como máximo 1 min).</div>
+  const p=P(),al=AL();
+  const opt=(id,list,key)=>`<div class="opts" id="${id}">${list.map(([v,t])=>`<button data-v="${v}" class="${String(al[key])===String(v)?'on':''}">${t}</button>`).join('')}</div>`;
+  const tg=(k,t,d)=>`<div class="tgl ${al[k]?'on':''}" data-tg="${k}"><div><b>${t}</b><small>${d}</small></div><i></i></div>`;
+  $('#sheet').innerHTML=`<div class="grab"></div><h3>Descanso y alarma</h3><div class="sub">Tiempo entre series. Si está en automático, arranca solo al marcar una serie ✓ (las de calentamiento descansan como máximo 1 min).</div>
     <h4>Duración</h4><div class="opts" id="rOpts">${[30,45,60,90,120,150,180,240].map(s=>`<button data-rs="${s}" class="${p.rest===s?'on':''}">${s<60?s+' s':fmt(s)}</button>`).join('')}</div>
     <h4>Modo</h4><div class="opts" id="rMode"><button data-a="1" class="${p.auto?'on':''}">Automático</button><button data-a="0" class="${p.auto?'':'on'}">Manual</button></div>
+    <h4>🔔 Sonido al terminar</h4>${opt('aSnd',[['campana','🔔 Campana'],['pitido','📟 Pitido'],['alarma','🚨 Alarma'],['off','🔇 Silencio']],'sound')}
+    <h4>Volumen</h4>${opt('aVol',[[.4,'Bajo'],[.7,'Medio'],[1,'Alto']],'vol')}
+    <h4>Repetir</h4>${opt('aRep',[[1,'1 vez'],[3,'3 veces'],[5,'5 veces']],'rep')}
+    <button class="btn sec2" id="aTest" style="margin-top:12px">🔊 Probar sonido</button>
+    ${tg('warn','Aviso antes de terminar','Un toque a los 10 s y cuenta 3, 2, 1')}
+    ${tg('vib','Vibrar','Funciona en Android (el iPhone no deja vibrar desde la web)')}
+    ${tg('wake','Mantener la pantalla encendida','Mientras entrenas, para que la alarma siempre suene')}
+    ${tg('bg','Sonar con la pantalla bloqueada','Usa una pista de audio. En iPhone puede pausar la música que estés escuchando')}
     <div style="height:18px"></div><button class="btn pri" id="rNow">Iniciar descanso ahora</button><button class="btn sec2" id="rOk">Guardar</button>`;
   $('#rOpts').querySelectorAll('button').forEach(b=>b.onclick=()=>{p.rest=+b.dataset.rs;save();$('#rOpts').querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===b))});
   $('#rMode').querySelectorAll('button').forEach(b=>b.onclick=()=>{p.auto=b.dataset.a==='1';save();$('#rMode').querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===b))});
+  [['aSnd','sound',String],['aVol','vol',Number],['aRep','rep',Number]].forEach(([id,k,f])=>$('#'+id).querySelectorAll('button').forEach(b=>b.onclick=()=>{AL()[k]=f(b.dataset.v);save();$('#'+id).querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===b));if(k!=='rep')testAlarm()}));
+  $('#sheet').querySelectorAll('[data-tg]').forEach(b=>b.onclick=()=>{const k=b.dataset.tg,a=AL();a[k]=!a[k];save();b.classList.toggle('on',a[k]);if(k==='wake')wake(a.wake&&!!P().workout)});
+  $('#aTest').onclick=testAlarm;
   $('#rNow').onclick=()=>{closeSheet();renderWk();startRest(p.rest)};
   $('#rOk').onclick=()=>{closeSheet();renderWk()};
   showSheet();
@@ -1172,7 +1244,7 @@ function openWkMenu(){
   $('#restB').onclick=openRestCfg;$('#platesB').onclick=()=>openPlates('');
   $('#cancel').onclick=()=>{$('#cancelBox').classList.add('on');$('#cancel').style.display='none'};
   $('#cNo').onclick=()=>{$('#cancelBox').classList.remove('on');$('#cancel').style.display='block'};
-  $('#cYes').onclick=()=>{P().workout=null;save();badge();stopRest();closeSheet();renderWk();toast('Entreno descartado')};
+  $('#cYes').onclick=()=>{P().workout=null;save();badge();stopRest();wake(false);closeSheet();renderWk();toast('Entreno descartado')};
   showSheet();
 }
 function finish(mode){
@@ -1195,7 +1267,7 @@ function finish(mode){
   const before=prMap(),achBefore=achievements().filter(a=>a.ok).map(a=>a.id);
   W.end=Date.now();
   W.items=W.items.map(it=>({id:it.id,ss:it.ss||undefined,sets:it.sets.filter(s=>s.done).map(s=>s.w?{kg:s.kg,reps:s.reps,w:true}:{kg:s.kg,reps:s.reps})})).filter(it=>it.sets.length);
-  p.history.unshift(W);p.workout=null;save();badge();stopRest();updateBell();
+  p.history.unshift(W);p.workout=null;save();badge();stopRest();wake(false);updateBell();
   const prs=[];W.items.forEach(it=>{const top=work(it.sets).reduce((a,b)=>num(b.kg)>num(a.kg)?b:a,{kg:0,reps:0});const o=before[it.id];if(o&&num(top.kg)>o.kg)prs.push({id:it.id,kg:+top.kg,reps:+top.reps,old:o.kg})});
   const newAch=achievements().filter(a=>a.ok&&!achBefore.includes(a.id));
   chartEx=W.items[0].id;
@@ -1210,19 +1282,25 @@ function finish(mode){
 
 
 /* ================= Temporizador ================= */
-let restEnd=0,restTot=0,restInt;
-function startRest(sec){restTot=sec;restEnd=Date.now()+sec*1000;$('#rest').classList.add('on');document.body.classList.add('resting');clearInterval(restInt);restInt=setInterval(upRest,200);upRest()}
+let restEnd=0,restTot=0,restInt,restDoneT;
+function startRest(sec){clearTimeout(restDoneT);$('#rest').classList.remove('fin');$('#restSkip').textContent='Saltar';restTot=sec;restEnd=Date.now()+sec*1000;$('#rest').classList.add('on');document.body.classList.add('resting');clearInterval(restInt);restInt=setInterval(upRest,200);schedAlarm(sec);upRest()}
 function upRest(){
   const left=(restEnd-Date.now())/1000;
-  $('#restT').textContent=fmt(Math.ceil(left));
+  $('#restT').textContent=fmt(Math.max(0,Math.ceil(left)));
   $('#ringArc').setAttribute('stroke-dashoffset',(169.6*(1-Math.max(0,Math.min(1,left/restTot)))).toFixed(1));
   $('#restSub').textContent=left>10?'Siguiente serie':'¡Prepárate!';
-  if(left<=0){stopRest();beep();toast('¡A por la siguiente serie!');try{navigator.vibrate&&navigator.vibrate([200,100,200])}catch(e){}}
+  if(left<=0)restDone();
 }
-function stopRest(){clearInterval(restInt);$('#rest').classList.remove('on');document.body.classList.remove('resting')}
+function restDone(){
+  clearInterval(restInt);const r=$('#rest');r.classList.add('fin');$('#restT').textContent='0:00';
+  r.querySelector('.l b').textContent='¡Descanso terminado!';$('#restSub').textContent='¡A la siguiente serie! 💪';$('#restSkip').textContent='Listo';
+  if(AL().vib)try{navigator.vibrate&&navigator.vibrate([400,150,400,150,400])}catch(e){}
+  clearTimeout(restDoneT);restDoneT=setTimeout(stopRest,12000);
+}
+function stopRest(){clearInterval(restInt);clearTimeout(restDoneT);cancelAlarm();restEnd=0;const r=$('#rest');r.classList.remove('on','fin');r.querySelector('.l b').textContent='Descansando';$('#restSkip').textContent='Saltar';document.body.classList.remove('resting')}
 $('#restSkip').onclick=stopRest;
-$('#restPlus').onclick=()=>{restEnd+=15000;restTot+=15;upRest()};
-$('#restMinus').onclick=()=>{restEnd-=15000;upRest()};
+$('#restPlus').onclick=()=>{if(!restEnd)return;if($('#rest').classList.contains('fin')){startRest(15);return}restEnd+=15000;restTot+=15;schedAlarm((restEnd-Date.now())/1000);upRest()};
+$('#restMinus').onclick=()=>{if(!restEnd||$('#rest').classList.contains('fin'))return;restEnd-=15000;const l=(restEnd-Date.now())/1000;if(l>0)schedAlarm(l);upRest()};
 
 /* ================= Gráficas ================= */
 let chartEx=null;

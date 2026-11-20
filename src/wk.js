@@ -75,7 +75,7 @@ function openPlanBuilder(){
 let tick;
 function renderWk(){
   clearInterval(tick);
-  const p=P(),W=p.workout,el=$('#wkBody');
+  const p=P(),W=p.workout,el=$('#wkBody');wake(!!W);
   if(!W){
     const nx=nextPlanDay(),mine=p.routines.filter(r=>!r.plan),plan=planRoutines();
     el.innerHTML=`
@@ -112,7 +112,7 @@ function renderWk(){
       <div class="r1"><div class="nm"><small>${esc(W.name)}</small><b id="clock">${fmt((Date.now()-W.start)/1000)}</b></div>
         <button class="more" id="wkMore" aria-label="Opciones">⋯</button><button class="fin" id="finish">Terminar</button></div>
       <div class="prog"><i id="progI"></i></div>
-      <div class="r2"><span id="hSum">0/0 series · 0 lb</span><button class="restchip" id="restCfg">⏱ ${fmt(p.rest)} <em>${p.auto?'auto':'manual'}</em></button></div>
+      <div class="r2"><span id="hSum">0/0 series · 0 lb</span><button class="restchip" id="restCfg">⏱ ${fmt(p.rest)}${AL().sound!=='off'?' 🔔':''} <em>${p.auto?'auto':'manual'}</em></button></div>
     </div>
     ${W.items.length?'<p class="muted" style="font-size:12px;margin:-4px 0 10px">Ajusta el peso y las reps con <b>−</b> / <b>+</b> (o escríbelos) y toca <b>✓</b> al terminar cada serie. Toca el número para marcarla como calentamiento <b style="color:var(--mid)">C</b>.</p>':`<div class="empty"><b>Entreno vacío</b>Añade tu primer ejercicio</div><div style="height:12px"></div>`}
     ${W.items.map((it,ii)=>{const e=byId[it.id];if(!e)return '';const inSS=it.ss||(ii>0&&W.items[ii-1].ss);if(inSS&&!(ii>0&&W.items[ii-1].ss))ssN++;
@@ -207,13 +207,26 @@ function openPicker(){
   showSheet();
 }
 function openRestCfg(){
-  const p=P();
-  $('#sheet').innerHTML=`<div class="grab"></div><h3>Descanso</h3><div class="sub">Tiempo entre series. Si está en automático, arranca solo al marcar una serie ✓ (las de calentamiento descansan como máximo 1 min).</div>
+  const p=P(),al=AL();
+  const opt=(id,list,key)=>`<div class="opts" id="${id}">${list.map(([v,t])=>`<button data-v="${v}" class="${String(al[key])===String(v)?'on':''}">${t}</button>`).join('')}</div>`;
+  const tg=(k,t,d)=>`<div class="tgl ${al[k]?'on':''}" data-tg="${k}"><div><b>${t}</b><small>${d}</small></div><i></i></div>`;
+  $('#sheet').innerHTML=`<div class="grab"></div><h3>Descanso y alarma</h3><div class="sub">Tiempo entre series. Si está en automático, arranca solo al marcar una serie ✓ (las de calentamiento descansan como máximo 1 min).</div>
     <h4>Duración</h4><div class="opts" id="rOpts">${[30,45,60,90,120,150,180,240].map(s=>`<button data-rs="${s}" class="${p.rest===s?'on':''}">${s<60?s+' s':fmt(s)}</button>`).join('')}</div>
     <h4>Modo</h4><div class="opts" id="rMode"><button data-a="1" class="${p.auto?'on':''}">Automático</button><button data-a="0" class="${p.auto?'':'on'}">Manual</button></div>
+    <h4>🔔 Sonido al terminar</h4>${opt('aSnd',[['campana','🔔 Campana'],['pitido','📟 Pitido'],['alarma','🚨 Alarma'],['off','🔇 Silencio']],'sound')}
+    <h4>Volumen</h4>${opt('aVol',[[.4,'Bajo'],[.7,'Medio'],[1,'Alto']],'vol')}
+    <h4>Repetir</h4>${opt('aRep',[[1,'1 vez'],[3,'3 veces'],[5,'5 veces']],'rep')}
+    <button class="btn sec2" id="aTest" style="margin-top:12px">🔊 Probar sonido</button>
+    ${tg('warn','Aviso antes de terminar','Un toque a los 10 s y cuenta 3, 2, 1')}
+    ${tg('vib','Vibrar','Funciona en Android (el iPhone no deja vibrar desde la web)')}
+    ${tg('wake','Mantener la pantalla encendida','Mientras entrenas, para que la alarma siempre suene')}
+    ${tg('bg','Sonar con la pantalla bloqueada','Usa una pista de audio. En iPhone puede pausar la música que estés escuchando')}
     <div style="height:18px"></div><button class="btn pri" id="rNow">Iniciar descanso ahora</button><button class="btn sec2" id="rOk">Guardar</button>`;
   $('#rOpts').querySelectorAll('button').forEach(b=>b.onclick=()=>{p.rest=+b.dataset.rs;save();$('#rOpts').querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===b))});
   $('#rMode').querySelectorAll('button').forEach(b=>b.onclick=()=>{p.auto=b.dataset.a==='1';save();$('#rMode').querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===b))});
+  [['aSnd','sound',String],['aVol','vol',Number],['aRep','rep',Number]].forEach(([id,k,f])=>$('#'+id).querySelectorAll('button').forEach(b=>b.onclick=()=>{AL()[k]=f(b.dataset.v);save();$('#'+id).querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===b));if(k!=='rep')testAlarm()}));
+  $('#sheet').querySelectorAll('[data-tg]').forEach(b=>b.onclick=()=>{const k=b.dataset.tg,a=AL();a[k]=!a[k];save();b.classList.toggle('on',a[k]);if(k==='wake')wake(a.wake&&!!P().workout)});
+  $('#aTest').onclick=testAlarm;
   $('#rNow').onclick=()=>{closeSheet();renderWk();startRest(p.rest)};
   $('#rOk').onclick=()=>{closeSheet();renderWk()};
   showSheet();
@@ -236,7 +249,7 @@ function openWkMenu(){
   $('#restB').onclick=openRestCfg;$('#platesB').onclick=()=>openPlates('');
   $('#cancel').onclick=()=>{$('#cancelBox').classList.add('on');$('#cancel').style.display='none'};
   $('#cNo').onclick=()=>{$('#cancelBox').classList.remove('on');$('#cancel').style.display='block'};
-  $('#cYes').onclick=()=>{P().workout=null;save();badge();stopRest();closeSheet();renderWk();toast('Entreno descartado')};
+  $('#cYes').onclick=()=>{P().workout=null;save();badge();stopRest();wake(false);closeSheet();renderWk();toast('Entreno descartado')};
   showSheet();
 }
 function finish(mode){
@@ -259,7 +272,7 @@ function finish(mode){
   const before=prMap(),achBefore=achievements().filter(a=>a.ok).map(a=>a.id);
   W.end=Date.now();
   W.items=W.items.map(it=>({id:it.id,ss:it.ss||undefined,sets:it.sets.filter(s=>s.done).map(s=>s.w?{kg:s.kg,reps:s.reps,w:true}:{kg:s.kg,reps:s.reps})})).filter(it=>it.sets.length);
-  p.history.unshift(W);p.workout=null;save();badge();stopRest();updateBell();
+  p.history.unshift(W);p.workout=null;save();badge();stopRest();wake(false);updateBell();
   const prs=[];W.items.forEach(it=>{const top=work(it.sets).reduce((a,b)=>num(b.kg)>num(a.kg)?b:a,{kg:0,reps:0});const o=before[it.id];if(o&&num(top.kg)>o.kg)prs.push({id:it.id,kg:+top.kg,reps:+top.reps,old:o.kg})});
   const newAch=achievements().filter(a=>a.ok&&!achBefore.includes(a.id));
   chartEx=W.items[0].id;
